@@ -7,6 +7,8 @@
 #include "p18f24k50.h"
 #include <xc.h>
 #include <timers.h>
+#include <stdbool.h>
+#include <stdio.h>
  
 #pragma config FOSC = INTOSCIO
 #pragma config MCLRE = ON
@@ -14,7 +16,11 @@
 #pragma config LVP = OFF
 #pragma config WDTEN = OFF, DEBUG = OFF
 
+#define PING_RECEIVED_LOW 464
+#define PING_RECEIVED_HIGH 564
+
 volatile int result = 0;
+volatile bool ping_received = false;
 
 static void initADCON() {
     // Init ADCON0
@@ -75,30 +81,60 @@ static void outputPWM() {
   
 }
 
-static void enableGlobalInterrupts() {
+static inline void enableGlobalInterrupts() {
     GIEH = 1;
 }
 
-static void enablePeripheralInterrupts() {
+static inline void enablePeripheralInterrupts() {
     PEIE = 1;
+}
+
+static inline void resetTMR2To200kHz() {
+    TMR2 = 236;
+}
+
+static inline void resetTMR0To1kHz() {
+    TMR0H = 0xF0;
+    TMR0L = 0x60;
 }
 
 //interrupt vector
 void interrupt MyIntVec(void) {
+    // Timer0 interrup 
     if (TMR0IE == 1 && TMR0IF == 1) {
         TMR0IF = 0;
         ADCON0bits.GO = 1;
     }
+    
     // ADC conversion finished
     if (PIE1bits.ADIE == 1 && PIR1bits.ADIF == 1 ) {
         PIR1bits.ADIF = 0; // reset end of conversion flag
-        result = (ADRESH << 2) | (ADRESL >> 6);
+        int adc_input = (ADRESH << 2) | (ADRESL >> 6);
+        if (adc_input < PING_RECEIVED_LOW || adc_input > PING_RECEIVED_HIGH) {
+            ping_received = true;
+        }
     }
 }
 
 void main(void){
     initOscillator();
     initPortB();
+    
+    // Timer0: f_out: 1kHz
+    // Reload for TMR0H:TMR0L: 61536
+    resetTMR0To1kHz();
+    OpenTimer0(TIMER_INT_ON 
+                & T0_16BIT
+                & T0_SOURCE_INT
+                & T0_PS_1_1);
+    
+    // Timer2: f_out: 200kHz (which is Fin / 20 where Fin = Fosc / 4)
+    // Reload for TMR2: 236
+    resetTMR2To200kHz();
+    OpenTimer2(TIMER_INT_ON 
+                & T2_PS_1_1
+                & T2_POST_1_1);
+    
     
     // enable interrupts
     GIEH = 1;
