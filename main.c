@@ -99,8 +99,7 @@ void interrupt MyIntVec(void) {
 void main(void){
     initOscillator();
     initPortB();
-    initUART();
-  
+    
     // enable interrupts
     GIEH = 1;
     PEIE = 1;
