@@ -68,32 +68,6 @@ void interrupt interrupt_service_routine(void) {
         TMR0IF = 0;
         tmr0_counter++;
         tmr0_new_value = true;
-        
-        switch(mode) {
-            case MODE_WAITING_BEFORE_SEND:
-                if(tmr0_counter >= WAIT_DURATION) {
-                    mode = MODE_SENDING;
-                    tmr0_counter = 0;
-                    startPWM();
-                }
-                break;
-            
-            case MODE_SENDING:
-                if(tmr0_counter >= SEND_DURATION) {
-                    mode = MODE_WAITING_AFTER_SEND;
-                    tmr0_counter = 0;
-                    stopPWM();
-                }
-                break;
-                
-            case MODE_WAITING_AFTER_SEND:
-                if(tmr0_counter >= WAIT_DURATION) {
-                    mode = MODE_RECV;
-                    tmr0_counter = 0;
-                    stopTimer0();
-                }
-                break;
-        }
     }
 }
 
@@ -234,19 +208,35 @@ void main(void){
                 if (val < PING_RECEIVED_LOW || val > PING_RECEIVED_HIGH) {
                     TMR2ON = 0;
                     mode = MODE_WAITING_BEFORE_SEND;
+                    startTimer0();
                 } 
                 break;
 
             case MODE_WAITING_BEFORE_SEND:
-                startTimer0();
+                if(tmr0_new_value && tmr0_counter >= WAIT_DURATION) {
+                    mode = MODE_SENDING;
+                    tmr0_counter = 0;
+                    startPWM();
+                    tmr0_new_value = false;
+                }
                 break;
                 
             case MODE_SENDING:
-                
+                if(tmr0_new_value && tmr0_counter >= SEND_DURATION) {
+                    mode = MODE_WAITING_AFTER_SEND;
+                    tmr0_counter = 0;
+                    stopPWM();
+                    tmr0_new_value = false;
+                }
                 break;
             
             case MODE_WAITING_AFTER_SEND:
-                startTimer0();
+                if(tmr0_new_value && tmr0_counter >= WAIT_DURATION) {
+                    mode = MODE_RECV;
+                    tmr0_counter = 0;
+                    stopTimer0();
+                    tmr0_new_value = false;
+                }
                 break;
                 
             default:
