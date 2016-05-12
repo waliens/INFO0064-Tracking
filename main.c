@@ -154,6 +154,9 @@ void main(void){
     while(1) {
         switch(mode) {
             case MODE_RECV:
+                /**
+                 * Spam ADC to check if a ping is received.
+                 */
                 if (adc_new_value) {
                     PIE1bits.ADIE = 0;
                     int val = (ADRESH << 2) | (ADRESL >> 6);
@@ -162,7 +165,10 @@ void main(void){
                     LED_PORT1 = 1;
                     if (val < PING_RECEIVED_LOW || val > PING_RECEIVED_HIGH) {
                         LED_PORT1 = 0;
+                        send_debug("PING");
                         mode = MODE_WAITING_BEFORE_SEND;
+                        tmr0_new_value = false;
+                        tmr0_counter = 0;
                         startTMR0For1kHz();
                     } else {
                         startADC();
@@ -172,7 +178,8 @@ void main(void){
             case MODE_WAITING_BEFORE_SEND:
                 /**
                  * Wait for tracker to be ready.
-                 * Device should wait 
+                 * Device should wait 15ms to ensure tracker has exited its 
+                 * noise avoidance phase. 
                  */
                 INTCONbits.TMR0IE = 0;
                 local_tmr0_new_value = tmr0_new_value;
@@ -196,7 +203,6 @@ void main(void){
                 INTCONbits.TMR0IE = 1;
                 
                 if(local_tmr0_new_value && local_tmr0_counter >= SEND_DURATION) {
-                    LED_PORT1 = 1;
                     stopPWM();
                     mode = MODE_WAITING_AFTER_SEND;
                     startTMR0For1kHz();
@@ -213,7 +219,6 @@ void main(void){
                 
                 if(local_tmr0_new_value && local_tmr0_counter >= WAIT_DURATION) {
                     stopTMR0();
-                    LED_PORT1 = 0;
                     LED_PORT2 = 0;
                     mode = MODE_RECV;
                     startADC();
