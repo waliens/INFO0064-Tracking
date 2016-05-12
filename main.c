@@ -21,18 +21,16 @@
 #define PING_RECEIVED_LOW 464
 #define PING_RECEIVED_HIGH 564
 
-#define MODE_UART 0
 #define MODE_RECV 1 
 #define MODE_WAITING_BEFORE_SEND 2
 #define MODE_SENDING 3
 #define MODE_WAITING_AFTER_SEND 4
 
-#define TMR2_PR_32KHZ 127
-
 #define SEND_DURATION 1
 #define WAIT_DURATION 15
 
-#define LED_PORT LATAbits.LATA0
+#define LED_PORT1 LATAbits.LATA0
+#define LED_PORT2 LATAbits.LATA1
 
 /**
  * Mode of the program
@@ -50,13 +48,7 @@ volatile int adc_val = -1;
 volatile bool adc_new_value = false;
 
 //interrupt vector
-void interrupt interrupt_service_routine(void) {
-    // Timer2 overflow
-    if (TMR2IE && TMR2IF) { 
-        TMR2IF = 0;
-        ADCON0bits.GO = 1;
-    }
-    
+void interrupt interrupt_service_routine(void) {    
     // ADC conversion finished
     if (PIE1bits.ADIE && PIR1bits.ADIF) {
         PIR1bits.ADIF = 0; // reset end of conversion flag
@@ -64,10 +56,11 @@ void interrupt interrupt_service_routine(void) {
     }
     
     // Timer0 overflow
-    if (TMR0IE && TMR0IF) { 
-        TMR0IF = 0;
+    if (INTCONbits.TMR0IE && INTCONbits.TMR0IF) { 
+        INTCONbits.TMR0IF = 0;
         tmr0_counter++;
         tmr0_new_value = true;
+        LED_PORT2 = !LED_PORT2;
     }
 }
 
@@ -97,9 +90,11 @@ static void initADCON() {
 /**
  * Initialize RA0 to be a digital output 
  */
-static void initLedOnRA0() {
+static void initLedPorts() {
     TRISAbits.TRISA0 = 0; // Port RA0 = output
-    LATAbits.LATA0 = 0; // Clear RA0 outputs (set 0V)
+    LATAbits.LATA0 = 0; // Clear RA0 output (set 0V)
+    TRISAbits.TRISA1 = 0; // Port RA1 = output 
+    LATAbits.LATA1 = 0; // Clear RA1 output (set 0V)
 }
 
 /**
@@ -113,136 +108,115 @@ static void initOscillator() {
     OSCCONbits.SCS = 0b00; // Primary clock defined by FOSC<3:0>
 }
 
-static void initTimer0() {
-    
-}
-
-static void startTimer0() {
-    
-}
-
-static void stopTimer0() {
-    CloseTimer0();
-}
-
-static void startTMR2() {
-    // TIMER2: f_out = ~30kHz
-    // Period : 127
-    PR2 = 191;
-    OpenTimer2(TIMER_INT_ON 
-                & T2_PS_1_1
-                & T2_POST_1_1);
-}
-
-static void startADC() {
+static inline void startADC() {
     ADCON0bits.GO = 1;
 }
 
-static void stopADC() {
-    ADCON0bits.GO = 0;
-}
-
-static void startPWM() {
+static void initPWM() {
     TRISC1 = 0;  // set PORTC as output, RC1 is the pwm pin output
     PORTC = 0;   // clear PORTC
-    //PR2 = 0b01100011;
-    
-    /* PWM registers configuration
-    * Fosc = 16000000 Hz
-    * Fpwm = 40000.00 Hz (Requested : 40000 Hz)
-    * Duty Cycle = 50 %
-    * Resolution is 8 bits
-    * Prescaler is 4
-    * Ensure that your PWM pin is configured as digital output
-    * see more details on http://www.micro-examples.com/
-    * this source code is provided 'as is',
-    * use it at your own risks
-    */
     PR2 = 0b00011000 ;
     CCP2CON = 0b00011100;
     CCPR2L = 0b00001100;
     T2CKPS1 = 0;    // Prescaler value - High bit
     T2CKPS0 = 1;    // Prescaler value - Low bit
-    TMR2ON = 1;     // Activate timer 2
-  
+}
+static void startPWM() {
+    TRISC1 = 0;
+    TMR2ON = 1;  
 }
 
 static void stopPWM() {
     // Stop PWM
-    TRISC1 = 1;
     TMR2ON = 0;
+    TRISC1 = 1;
 }
 
 
 void main(void){
     initOscillator();
-    initLedOnRA0();
+    initTMR0();
+    initLedPorts();
     initADCON();
     initUART();
-    initTimer0();
+    initPWM();
 
     // Mode of the pic
     mode = MODE_RECV;
-    startTMR2();
-    
     // enable interrupts
     GIEH = 1;
     PEIE = 1;
     //int i = 0;
+    startADC();
+    
+    int local_tmr0_counter;
+    bool local_tmr0_new_value;
     while(1) {
         switch(mode) {
-            case MODE_UART:
-                LED_PORT = 1; // light up led
-                send_debug("Ping received.");
-                for (int i = 0; i < 20000; ++i);
-                mode = MODE_RECV;
-                TMR2ON = 1;
-                LED_PORT = 0; // shut off led
-                break;
-                
             case MODE_RECV:
-                // check thresholds
-                if(adc_new_value) {
+                if (adc_new_value) {
                     PIE1bits.ADIE = 0;
                     int val = (ADRESH << 2) | (ADRESL >> 6);
+                    adc_new_value = false;
                     PIE1bits.ADIE = 1;
-                    
+                    LED_PORT1 = 1;
                     if (val < PING_RECEIVED_LOW || val > PING_RECEIVED_HIGH) {
-                        TMR2ON = 0;
+                        LED_PORT1 = 0;
                         mode = MODE_WAITING_BEFORE_SEND;
-                        startTimer0();
-                    } 
+                        startTMR0For1kHz();
+                    } else {
+                        startADC();
+                    }
                 }
-                
-                break;
-
+               
             case MODE_WAITING_BEFORE_SEND:
-                if(tmr0_new_value && tmr0_counter >= WAIT_DURATION) {
+                /**
+                 * Wait for tracker to be ready.
+                 * Device should wait 
+                 */
+                INTCONbits.TMR0IE = 0;
+                local_tmr0_new_value = tmr0_new_value;
+                local_tmr0_counter = tmr0_counter;
+                tmr0_new_value = false;
+                INTCONbits.TMR0IE = 1;
+                
+                if(local_tmr0_new_value && local_tmr0_counter >= WAIT_DURATION) {
                     mode = MODE_SENDING;
-                    tmr0_counter = 0;
                     startPWM();
-                } else {
-                    tmr0_new_value = false;
-                }
+                    startTMR0For1kHz();
+                } 
+                
                 break;
                 
             case MODE_SENDING:
-                if(tmr0_new_value && tmr0_counter >= SEND_DURATION) {
-                    mode = MODE_WAITING_AFTER_SEND;
-                    tmr0_counter = 0;
+                INTCONbits.TMR0IE = 0;
+                local_tmr0_new_value = tmr0_new_value;
+                local_tmr0_counter = tmr0_counter;
+                tmr0_new_value = false;
+                INTCONbits.TMR0IE = 1;
+                
+                if(local_tmr0_new_value && local_tmr0_counter >= SEND_DURATION) {
+                    LED_PORT1 = 1;
                     stopPWM();
-                } else {
-                    tmr0_new_value = false;
+                    mode = MODE_WAITING_AFTER_SEND;
+                    startTMR0For1kHz();
+                    tmr0_counter = 0;
                 }
                 break;
             
             case MODE_WAITING_AFTER_SEND:
-                if(tmr0_new_value && tmr0_counter >= WAIT_DURATION) {
+                INTCONbits.TMR0IE = 0;
+                local_tmr0_new_value = tmr0_new_value;
+                local_tmr0_counter = tmr0_counter;
+                tmr0_new_value = false;
+                INTCONbits.TMR0IE = 1;
+                
+                if(local_tmr0_new_value && local_tmr0_counter >= WAIT_DURATION) {
+                    stopTMR0();
+                    LED_PORT1 = 0;
+                    LED_PORT2 = 0;
                     mode = MODE_RECV;
-                    tmr0_counter = 0;
-                    stopTimer0();
-                } else {
-                    tmr0_new_value = false;
+                    startADC();
                 }
                 break;
                 

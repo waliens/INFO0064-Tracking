@@ -9,7 +9,7 @@ void initTMR0For1kHz();
 /**
  * Reset the Timer0 preload so that it triggers an interrupt after 1ms
  */
-inline void resetTMR0For1kHz();
+inline void startTMR0For1kHz();
 
 /**
  * Disable Timer0
