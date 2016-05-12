@@ -23,8 +23,14 @@
 
 #define MODE_UART 0
 #define MODE_RECV 1 
+#define MODE_WAITING_BEFORE_SEND 2
+#define MODE_SENDING 3
+#define MODE_WAITING_AFTER_SEND 4
 
 #define TMR2_PR_32KHZ 127
+
+#define SEND_DURATION 1
+#define WAIT_DURATION 15
 
 #define LED_PORT LATAbits.LATA0
 
@@ -33,10 +39,15 @@
  */
 volatile char mode = MODE_RECV;
 volatile int counter = 0;
+
+volatile int tmr0_counter = 0;
+volatile bool tmr0_new_value = false;
+
 /**
  * ADC fields
  */
 volatile int adc_val = -1;
+volatile bool adc_new_value = false;
 
 //interrupt vector
 void interrupt interrupt_service_routine(void) {
@@ -49,7 +60,40 @@ void interrupt interrupt_service_routine(void) {
     // ADC conversion finished
     if (PIE1bits.ADIE && PIR1bits.ADIF) {
         PIR1bits.ADIF = 0; // reset end of conversion flag
-        adc_val = (ADRESH << 2) | (ADRESL >> 6);
+        adc_new_value = true;
+    }
+    
+    // Timer0 overflow
+    if (TMR0IE && TMR0IF) { 
+        TMR0IF = 0;
+        tmr0_counter++;
+        tmr0_new_value = true;
+        
+        switch(mode) {
+            case MODE_WAITING_BEFORE_SEND:
+                if(tmr0_counter >= WAIT_DURATION) {
+                    mode = MODE_SENDING;
+                    tmr0_counter = 0;
+                    startPWM();
+                }
+                break;
+            
+            case MODE_SENDING:
+                if(tmr0_counter >= SEND_DURATION) {
+                    mode = MODE_WAITING_AFTER_SEND;
+                    tmr0_counter = 0;
+                    stopPWM();
+                }
+                break;
+                
+            case MODE_WAITING_AFTER_SEND:
+                if(tmr0_counter >= WAIT_DURATION) {
+                    mode = MODE_RECV;
+                    tmr0_counter = 0;
+                    stopTimer0();
+                }
+                break;
+        }
     }
 }
 
@@ -95,7 +139,19 @@ static void initOscillator() {
     OSCCONbits.SCS = 0b00; // Primary clock defined by FOSC<3:0>
 }
 
-void startTMR2() {
+static void initTimer0() {
+    
+}
+
+static void startTimer0() {
+    
+}
+
+static void stopTimer0() {
+    CloseTimer0();
+}
+
+static void startTMR2() {
     // TIMER2: f_out = ~30kHz
     // Period : 127
     PR2 = 191;
@@ -103,6 +159,46 @@ void startTMR2() {
                 & T2_PS_1_1
                 & T2_POST_1_1);
 }
+
+static void startADC() {
+    ADCON0bits.GO = 1;
+}
+
+static void stopADC() {
+    ADCON0bits.GO = 0;
+}
+
+static void startPWM() {
+    TRISC1 = 0;  // set PORTC as output, RC1 is the pwm pin output
+    PORTC = 0;   // clear PORTC
+    //PR2 = 0b01100011;
+    
+    /* PWM registers configuration
+    * Fosc = 16000000 Hz
+    * Fpwm = 40000.00 Hz (Requested : 40000 Hz)
+    * Duty Cycle = 50 %
+    * Resolution is 8 bits
+    * Prescaler is 4
+    * Ensure that your PWM pin is configured as digital output
+    * see more details on http://www.micro-examples.com/
+    * this source code is provided 'as is',
+    * use it at your own risks
+    */
+    PR2 = 0b00011000 ;
+    CCP2CON = 0b00011100;
+    CCPR2L = 0b00001100;
+    T2CKPS1 = 0;    // Prescaler value - High bit
+    T2CKPS0 = 1;    // Prescaler value - Low bit
+    TMR2ON = 1;     // Activate timer 2
+  
+}
+
+static void stopPWM() {
+    // Stop PWM
+    TRISC1 = 1;
+    TMR2ON = 0;
+}
+
 
 void main(void){
     initOscillator();
@@ -128,16 +224,32 @@ void main(void){
                 TMR2ON = 1;
                 LED_PORT = 0; // shut off led
                 break;
+                
             case MODE_RECV:
                 // check thresholds
                 PIE1bits.ADIE = 0;
-                int val = adc_val;
+                int val = (ADRESH << 2) | (ADRESL >> 6);
                 PIE1bits.ADIE = 1;
                
                 if (val < PING_RECEIVED_LOW || val > PING_RECEIVED_HIGH) {
                     TMR2ON = 0;
-                    mode = MODE_UART;
+                    mode = MODE_WAITING_BEFORE_SEND;
                 } 
+                break;
+
+            case MODE_WAITING_BEFORE_SEND:
+                startTimer0();
+                break;
+                
+            case MODE_SENDING:
+                
+                break;
+            
+            case MODE_WAITING_AFTER_SEND:
+                startTimer0();
+                break;
+                
+            default:
                 break;
         }
     } 
