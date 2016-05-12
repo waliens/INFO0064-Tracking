@@ -179,6 +179,7 @@ void main(void){
     initLedOnRA0();
     initADCON();
     initUART();
+    initTimer0();
 
     // Mode of the pic
     mode = MODE_RECV;
