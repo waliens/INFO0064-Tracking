@@ -201,15 +201,18 @@ void main(void){
                 
             case MODE_RECV:
                 // check thresholds
-                PIE1bits.ADIE = 0;
-                int val = (ADRESH << 2) | (ADRESL >> 6);
-                PIE1bits.ADIE = 1;
-               
-                if (val < PING_RECEIVED_LOW || val > PING_RECEIVED_HIGH) {
-                    TMR2ON = 0;
-                    mode = MODE_WAITING_BEFORE_SEND;
-                    startTimer0();
-                } 
+                if(adc_new_value) {
+                    PIE1bits.ADIE = 0;
+                    int val = (ADRESH << 2) | (ADRESL >> 6);
+                    PIE1bits.ADIE = 1;
+                    
+                    if (val < PING_RECEIVED_LOW || val > PING_RECEIVED_HIGH) {
+                        TMR2ON = 0;
+                        mode = MODE_WAITING_BEFORE_SEND;
+                        startTimer0();
+                    } 
+                }
+                
                 break;
 
             case MODE_WAITING_BEFORE_SEND:
@@ -217,6 +220,7 @@ void main(void){
                     mode = MODE_SENDING;
                     tmr0_counter = 0;
                     startPWM();
+                } else {
                     tmr0_new_value = false;
                 }
                 break;
@@ -226,6 +230,7 @@ void main(void){
                     mode = MODE_WAITING_AFTER_SEND;
                     tmr0_counter = 0;
                     stopPWM();
+                } else {
                     tmr0_new_value = false;
                 }
                 break;
@@ -235,6 +240,7 @@ void main(void){
                     mode = MODE_RECV;
                     tmr0_counter = 0;
                     stopTimer0();
+                } else {
                     tmr0_new_value = false;
                 }
                 break;
