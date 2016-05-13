@@ -149,9 +149,10 @@ static inline void startADC() {
 static inline void initPWM() {
     TRISC1 = 0;  // set PORTC as output, RC1 is the pwm pin output
     PORTC = 0;   // clear PORTC
-    PR2 = 0b00011000 ;
-    CCP2CON = 0b00011100;
-    CCPR2L = 0b00001100;
+    PR2 = 0b00011000 ; // 24 : PWM Period value
+    CCP2CON = 0b00011100; // 00 (unused) : 01(These bits are the two LSbs of the PWM duty cycle. The eight MSbs are found in CCPRxL.) : 1100 (PWM mode))
+    CCPR2L = 0b00001100; // -> 0b0000110010 = 50% duty cycle
+
     T2CKPS1 = 0;    // Prescaler value - High bit
     T2CKPS0 = 1;    // Prescaler value - Low bit
 }
