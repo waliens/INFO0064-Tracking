@@ -12,6 +12,11 @@ void initTMR0For1kHz();
 inline void startTMR0For1kHz();
 
 /**
+ * Preload the timer 0 counter so that it ticks 1ms later
+ */
+inline void preloadTMR0For1kHz();
+
+/**
  * Disable Timer0
  */
 inline void stopTMR0();

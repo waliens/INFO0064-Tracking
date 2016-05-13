@@ -9,9 +9,13 @@ void initTMR0() {
     //T0PS = 0b000; // prescale 1:2 (not used due to previous line)
 }
 
-inline void startTMR0For1kHz() {
+inline void preloadTMR0For1kHz() {
     TMR0H = 0xF0;
     TMR0L = 0x60;
+}
+
+inline void startTMR0For1kHz() {
+    preloadTMR0For1kHz();
     INTCONbits.TMR0IF = 0;
     INTCONbits.TMR0IE = 1; 
     TMR0ON = 1;
